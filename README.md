@@ -1,4 +1,5 @@
 # Laboratorio 09
+**GOOGLE COLAB: ** https://drive.google.com/file/d/1JQG4_06angua_iXGIxg8-oBv3bZmvMvj/view?usp=sharing
 
 ## Archivos
 
@@ -24,6 +25,8 @@
 | 8 | `0.302176` | `0.137760` | `0.120256` | `0.560192` |
 
 > *Tiempos en ms*
+
+<img width="1489" height="490" alt="image" src="https://github.com/user-attachments/assets/5499c762-b2aa-4060-90d6-31cd107efe58" />
 
 
 - inciso d
