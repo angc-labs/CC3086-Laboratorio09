@@ -7,6 +7,7 @@
 // - Copia a GPU, ejecuta un kernel (1 hilo = 1 fila), calcula el
 //   promedio por fila con suma directa, y trae el resultado a host
 // - Usa UN SOLO stream y mide tiempos: H->D, Kernel, D->H
+// - Identifica el país con el promedio más alto
 // ------------------------------------------------------------
 
 #include <stdio.h>
@@ -22,6 +23,9 @@
 
 // Filas reales de datos del archivo (4319 totales menos 1 del encabezado)
 #define ROWS 4318
+
+// TAMAÑO MAXIMO PARA NOMBRES DE PAIS
+#define MAX_COUNTRY_NAME 100
 
 // ------------------------------------------------------------
 // Kernel: un hilo procesa una fila
@@ -59,11 +63,12 @@ int main(){
     if(!fgets(line, 5000, f)) return 0;
 
     // --------------------------------------------------------
-    // 2) Reservar vectores por columna (F..O) y de salida
+    // 2) Reservar vectores por columna (F..O), nombres de país y de salida
     //    Como el archivo es estático: reservamos ROWS exactas
     // --------------------------------------------------------
     float *y0,*y1,*y2,*y3,*y4,*y5,*y6,*y7,*y8,*y9;
     float *out_host;
+    char **countries;  // array de nombres de paises
 
     y0 = (float*)malloc(ROWS*sizeof(float));
     y1 = (float*)malloc(ROWS*sizeof(float));
@@ -76,10 +81,17 @@ int main(){
     y8 = (float*)malloc(ROWS*sizeof(float));
     y9 = (float*)malloc(ROWS*sizeof(float));
     out_host = (float*)malloc(ROWS*sizeof(float));
+    
+    // RESERVAR ESPACIO PARA NOMBRES DE PAISES
+    countries = (char**)malloc(ROWS*sizeof(char*));
+    for(int i = 0; i < ROWS; i++){
+        countries[i] = (char*)malloc(MAX_COUNTRY_NAME*sizeof(char));
+    }
 
     // --------------------------------------------------------
-    // 3) Leer el CSV línea por línea y llenar y0..y9
+    // 3) Leer el CSV línea por línea y llenar y0..y9 y nombres de países
     //    - strtok separa por comas
+    //    - columna 0 es el país
     //    - solo copiamos columnas [COL_START..COL_END]
     //    - atof convierte texto -> float (si no es numérico, queda 0.0)
     // --------------------------------------------------------
@@ -90,7 +102,13 @@ int main(){
         int taken = 0; // cuántas columnas de F..O llevamos (0..9)
 
         while(tok){
-            if(col >= COL_START && col <= COL_END){
+            // Columna 0 es el país
+            if(col == 0){
+                strncpy(countries[N], tok, MAX_COUNTRY_NAME-1);
+                countries[N][MAX_COUNTRY_NAME-1] = '\0';
+            }
+            // Columnas F..O (índices 5..14)
+            else if(col >= COL_START && col <= COL_END){
                 float v = atof(tok);
                 switch(taken){
                     case 0: y0[N]=v; break;
@@ -179,10 +197,10 @@ int main(){
     cudaEventRecord(d2h_e, s);
 
     // Aseguramos que todo terminó antes de leer tiempos o imprimir
-   // cudaStreamSynchronize(s);
+    cudaStreamSynchronize(s);
 
     // --------------------------------------------------------
-    // 9) Tiempos (ms) por etapa y primeros resultados
+    // 9) Tiempos (ms) por etapa
     // --------------------------------------------------------
     float t_h2d, t_k, t_d2h;
     cudaEventElapsedTime(&t_h2d, h2d_s, h2d_e);
@@ -194,13 +212,32 @@ int main(){
     printf("Tiempo Kernel: %f ms\n", t_k);
     printf("Tiempo Device->Host: %f ms\n", t_d2h);
 
+    // --------------------------------------------------------
+    // 10) Encontrar el país con el promedio más alto
+    // --------------------------------------------------------
+    int max_idx = 0;
+    float max_avg = out_host[0];
+    
+    for(int i = 1; i < N; i++){
+        if(out_host[i] > max_avg){
+            max_avg = out_host[i];
+            max_idx = i;
+        }
+    }
+    
+    printf("\n=== RESULTADO ===\n");
+    printf("País con el promedio más alto: %s\n", countries[max_idx]);
+    printf("Promedio: %.6f\n", max_avg);
+    printf("================\n\n");
+
     // Vista rápida de los primeros 20 promedios para verificar que todo tiene sentido
+    printf("Primeros 20 promedios:\n");
     for(int i=0; i<20 && i<N; ++i){
-        printf("Prom fila %d = %f\n", i, out_host[i]);
+        printf("Prom fila %d (%s) = %f\n", i, countries[i], out_host[i]);
     }
 
     // --------------------------------------------------------
-    // 10) Limpieza (host y device)
+    // 11) Limpieza (host y device)
     // --------------------------------------------------------
     cudaFree(d_y0); cudaFree(d_y1); cudaFree(d_y2); cudaFree(d_y3); cudaFree(d_y4);
     cudaFree(d_y5); cudaFree(d_y6); cudaFree(d_y7); cudaFree(d_y8); cudaFree(d_y9);
@@ -209,6 +246,11 @@ int main(){
     free(y0); free(y1); free(y2); free(y3); free(y4);
     free(y5); free(y6); free(y7); free(y8); free(y9);
     free(out_host);
+    
+    for(int i = 0; i < ROWS; i++){
+        free(countries[i]);
+    }
+    free(countries);
 
     return 0;
 }
